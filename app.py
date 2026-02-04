@@ -1,61 +1,103 @@
-
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.preprocessing import StandardScaler
+from sklearn.cluster import KMeans
+from sklearn.decomposition import PCA
 
-st.set_page_config(page_title="Product Sales Dashboard", layout="wide")
+# ---------------- PAGE CONFIG ----------------
+st.set_page_config(
+    page_title="📊 Product Sales Analysis (2023–2024)",
+    layout="wide"
+)
 
 st.title("📊 Product Sales Analysis (2023–2024)")
+st.write("K-Means Clustering and Sales Insights")
 
-# Load dataset directly
-@st.cache_data
-def load_data():
-    return pd.read_csv("product_sales_dataset_2023_2024.csv")
+# ---------------- FILE UPLOADER (NO ERROR) ----------------
+st.subheader("📁 Upload Dataset")
 
-df = load_data()
+uploaded_file = st.file_uploader(
+    "Upload product_sales_dataset_2023_2024.csv",
+    type=["csv"]
+)
 
-# Dataset preview
-st.subheader("🔍 Dataset Preview")
+if uploaded_file is None:
+    st.warning("Please upload the CSV file to continue.")
+    st.stop()   # ⛔ stops app safely (no error)
+
+# ---------------- LOAD DATA ----------------
+df = pd.read_csv(uploaded_file)
+st.success("Dataset loaded successfully ✅")
+
+# ---------------- DATA PREVIEW ----------------
+st.subheader("📄 Dataset Preview")
 st.dataframe(df.head())
 
-# Basic metrics
-st.subheader("📌 Dataset Overview")
-col1, col2, col3 = st.columns(3)
-col1.metric("Total Records", df.shape[0])
-col2.metric("Total Columns", df.shape[1])
-col3.metric("Total Products", df["Product"].nunique())
+# ---------------- FEATURE SELECTION ----------------
+features = ['Quantity', ' Unit_Price ', ' Revenue ', ' Profit ']
 
-# Sales by Product
-st.subheader("💰 Sales by Product")
-product_sales = df.groupby("Product")["Sales"].sum().sort_values(ascending=False)
+# Check if all required columns exist
+missing_cols = [col for col in features if col not in df.columns]
+if missing_cols:
+    st.error(f"Missing columns in dataset: {missing_cols}")
+    st.stop()
 
-fig1, ax1 = plt.subplots()
-product_sales.plot(kind="bar", ax=ax1)
-ax1.set_xlabel("Product")
-ax1.set_ylabel("Total Sales")
-ax1.set_title("Total Sales per Product")
-st.pyplot(fig1)
+X = df[features]
 
-# Monthly Sales Trend
-st.subheader("📈 Monthly Sales Trend")
-df["Date"] = pd.to_datetime(df["Date"])
-df["Month"] = df["Date"].dt.to_period("M")
+# ---------------- SCALING ----------------
+scaler = StandardScaler()
+X_scaled = scaler.fit_transform(X)
 
-monthly_sales = df.groupby("Month")["Sales"].sum()
+# ---------------- K-MEANS CLUSTERING ----------------
+st.subheader("⚙️ K-Means Clustering")
 
-fig2, ax2 = plt.subplots()
-monthly_sales.plot(kind="line", marker="o", ax=ax2)
-ax2.set_xlabel("Month")
-ax2.set_ylabel("Total Sales")
-ax2.set_title("Monthly Sales Trend")
-st.pyplot(fig2)
+k = st.slider("Select number of clusters (k)", min_value=2, max_value=5, value=2)
 
-# Category-wise Sales
-st.subheader("🗂 Category-wise Sales")
-category_sales = df.groupby("Category")["Sales"].sum()
+kmeans = KMeans(n_clusters=k, random_state=42, n_init='auto')
+df['Cluster'] = kmeans.fit_predict(X_scaled)
 
-fig3, ax3 = plt.subplots()
-category_sales.plot(kind="pie", autopct="%1.1f%%", ax=ax3)
-ax3.set_ylabel("")
-ax3.set_title("Sales Distribution by Category")
-st.pyplot(fig3)
+st.success("Clustering completed ✅")
+
+# ---------------- PCA ----------------
+pca = PCA(n_components=2)
+X_pca = pca.fit_transform(X_scaled)
+
+df['PCA1'] = X_pca[:, 0]
+df['PCA2'] = X_pca[:, 1]
+
+# ---------------- VISUALIZATION ----------------
+st.subheader("📈 Cluster Visualization using PCA")
+
+fig, ax = plt.subplots(figsize=(8, 5))
+sns.scatterplot(
+    x='PCA1',
+    y='PCA2',
+    hue='Cluster',
+    data=df,
+    palette='viridis',
+    ax=ax
+)
+
+ax.set_title("K-Means Clusters (PCA)")
+ax.set_xlabel("Principal Component 1")
+ax.set_ylabel("Principal Component 2")
+
+st.pyplot(fig)
+
+# ---------------- CLUSTER SUMMARY ----------------
+st.subheader("📊 Cluster Summary (Mean Values)")
+cluster_summary = df.groupby('Cluster')[features].mean()
+st.dataframe(cluster_summary)
+
+# ---------------- DOWNLOAD RESULT ----------------
+st.subheader("⬇️ Download Clustered Dataset")
+
+csv = df.to_csv(index=False).encode("utf-8")
+st.download_button(
+    label="Download CSV",
+    data=csv,
+    file_name="product_sales_clustered_output.csv",
+    mime="text/csv"
+)
